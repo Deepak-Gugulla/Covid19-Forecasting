@@ -1,0 +1,232 @@
+---
+title: "Stat. 674 Project"
+author: "Deepak_Gugulla"
+date: "2/24/2025"
+format: 
+  html:
+    embed-resources: true
+    page-layout: full
+    df-print: paged
+---
+
+## Class Project
+
+For the COVID19 data from United States develop the best forecasting models for *confirmed* cases and produce a forecast for the next 30 days, after the end of the available data.  Note that the data is recorded daily.
+
+See Section 9.11 Exercises 10 for an example.
+
+```{r}
+library(pacman)
+p_load(tidyverse, fpp3, COVID19)
+```
+
+```{r}
+covid_data <- covid19(c("United States"))
+covid_data <- covid_data %>% as_tsibble(key = "id", index = "date")
+```
+
+> a. Produce an STL decomposition of the data and describe the trend and seasonality.
+
+First determine when the start and end of the available data for the *confirmed* cases.
+
+### **Answer:**
+
+The dates are from 05-01-2020 to mid of 2023
+
+### **Code and Comments:**
+
+```{r}
+covid_data %>% autoplot(confirmed)
+# Load necessary libraries
+library(pacman)
+p_load(tidyverse, fpp3, COVID19)
+
+# Load COVID-19 data for the United States
+covid_data <- covid19("United States")
+
+# Convert to a tsibble
+covid_data <- covid_data %>% as_tsibble(key = "id", index = "date")
+covid_data <- covid_data %>%
+  drop_na(confirmed)
+
+# Check start and end dates for confirmed cases
+covid_data %>%
+  summarise(Start_Date = min(date), End_Date = max(date))
+
+# STL decomposition of confirmed cases
+covid_data %>%
+  model(STL(confirmed ~ season(window = "periodic"))) %>%
+  components() %>%
+  autoplot() +
+  labs(title = "STL Decomposition of COVID-19 Confirmed Cases in the US",
+       y = "Confirmed Cases", x = "Date")
+
+
+```
+
+> b. Do the data need transforming? If so, find a suitable transformation.
+
+### **Answer:**
+
+A log transformation helps stabilize variance and convert multiplicative seasonality into an additive form.
+The log-transformed COVID-19 confirmed cases data is not stationary, as the plot still shows an upward trend, meaning the mean is not constant over time. To make the data stationary, we apply differencing
+### **Code and Comments:**
+
+```{r}
+# Apply log transformation to stabilize variance
+covid_data <- covid_data %>%
+  mutate(log_confirmed = log(confirmed + 1))  # Adding 1 to avoid log(0) issue
+
+# Plot transformed data
+covid_data %>%
+  autoplot(log_confirmed) +
+  labs(title = "Log-Transformed COVID-19 Confirmed Cases", y = "Log(Confirmed Cases)", x = "Date")
+
+```
+
+> c. Are the data approximately stationary? If not, find an appropriate differencing which yields approximately stationary data.
+
+Try differencing.  Try differencing twice.  It may not be possible to transform the data to get the data to have both constant mean and constant variance.  Try to get at least a constant mean.
+
+### **Answer:**
+
+Summarize your answer to the question here.  All code and comments should be below and enter your written answer here.
+
+### **Code and Comments:**
+
+```{r}
+# Load necessary libraries
+library(fpp3)
+
+# Perform ACF plot to check for stationarity
+covid_data %>%
+  ACF(log_confirmed) %>%
+  autoplot()
+
+# KPSS test for stationarity
+covid_data %>%
+  features(log_confirmed, unitroot_kpss)
+
+# First-order differencing
+covid_data <- covid_data %>%
+  mutate(diff_log_confirmed = difference(log_confirmed))
+
+# Plot differenced data
+covid_data %>%
+  autoplot(diff_log_confirmed) +
+  labs(title = "First-Order Differencing of Log COVID-19 Cases",
+       y = "Differenced Log Cases", x = "Date")
+
+# ACF plot to check if differencing is sufficient
+covid_data %>%
+  ACF(diff_log_confirmed) %>%
+  autoplot()
+
+
+# First-order differencing
+covid_data <- covid_data %>%
+  mutate(diff_log_confirmed = difference(log_confirmed))
+
+# Plot differenced data
+covid_data %>%
+  autoplot(diff_log_confirmed) +
+  labs(title = "First-Order Differencing of Log COVID-19 Cases",
+       y = "Differenced Log Cases", x = "Date")
+
+# ACF plot to check if differencing is sufficient
+covid_data %>%
+  ACF(diff_log_confirmed) %>%
+  autoplot()
+
+```
+
+> d. Identify two ARIMA models that might be useful in describing the time series. Which of your models is the best according to their AICc values?
+
+### **Answer:**
+
+Summarize your answer to the question here.  All code and comments should be below and your written answer above.
+
+Hint a possible best model is of the form ARIMA(3,1,0)(0,1,1).
+
+### **Code and Comments:**
+
+```{r}
+# Load necessary libraries
+library(fpp3)
+
+# Fit two candidate ARIMA models
+fit1 <- covid_data %>% model(ARIMA(diff_log_confirmed ~ pdq(3,1,0) + PDQ(0,1,1)))
+fit2 <- covid_data %>% model(ARIMA(diff_log_confirmed ~ pdq(2,1,2)))
+
+# Compare AICc values for model selection
+glance(fit1)
+glance(fit2)
+
+# Automatically select the best ARIMA model
+best_fit <- covid_data %>%
+  model(ARIMA(diff_log_confirmed ~ stepwise()))
+
+# Display the selected model
+report(best_fit)
+
+```
+
+> e. Estimate the parameters of your best model and do diagnostic testing on the residuals. Do the residuals resemble white noise? If not, try to find another ARIMA model which fits better.
+
+Hint: Use **ARIMA** to search for the best model.
+
+### **Answer:**
+The best ARIMA model for the COVID-19 confirmed cases data is determined by searching through different parameter combinations and comparing AICc values. The model ARIMA(3,1,0)(0,1,1) is a strong candidate as it captures trend, seasonality, and autocorrelation effectively.
+
+### **Code and Comments:**
+
+```{r}
+# Load necessary libraries
+library(fpp3)
+
+# Fit the suggested ARIMA model (3,1,0)(0,1,1)
+fit_selected <- covid_data %>%
+  model(ARIMA(diff_log_confirmed ~ pdq(3,1,0) + PDQ(0,1,1)))
+
+# Automatically search for the best ARIMA model
+fit_auto <- covid_data %>%
+  model(ARIMA(diff_log_confirmed ~ stepwise()))
+
+# Compare AICc values
+glance(fit_selected)
+glance(fit_auto)
+
+# Display details of the best model
+report(fit_auto)
+
+```
+
+> f. Forecast the next 25 weeks. 
+
+### **Answer:**
+
+Summarize your answer to the question here.  All code and comments should be below and your written answer above.
+
+### **Code and Comments:**
+
+```{r}
+forecast_25w <- fit_auto %>%
+  forecast(h = "25 weeks")
+
+# Plot the forecast
+forecast_25w %>%
+  autoplot(covid_data) +
+  labs(title = "COVID-19 Confirmed Cases Forecast (Next 25 Weeks)",
+       y = "Log-Transformed Confirmed Cases", x = "Date")
+```
+
+> g. Eventually, the prediction intervals are so wide that the forecasts are not particularly useful. How many weeks of forecasts do you think are sufficiently accurate to be usable?
+
+### **Answer:**
+
+The prediction intervals widen significantly as the forecast horizon increases, reducing the reliability of long-term forecasts. Typically, forecasts remain accurate for about 4 to 8 weeks, after which uncertainty increases, making them less useful for decision-making.
+
+
+
+
+
